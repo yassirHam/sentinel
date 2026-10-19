@@ -5,8 +5,14 @@ Used to produce the figures in docs/sprint1_report.md. Run:
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi.testclient import TestClient
 from app.main import app, state
+
+# Keep the capture output clean: silence per-request + httpx chatter.
+for noisy in ("sentinel.request", "sentinel.app", "httpx", "httpcore"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def total(metrics: str, name: str) -> float:
