@@ -1,0 +1,56 @@
+Sentinel — Sprint 1 Architecture
+================================
+
+Component boundaries and data flow for the local observability platform.
+
+                         ┌──────────────────────────────┐
+      HTTP client        │        docker compose         │
+      (curl / scripts)   │                                │
+            │            │   ┌────────────────────────┐   │
+            │  :8000     │   │  service               │   │
+            └───────────────▶│  (FastAPI, Python)     │   │
+                         │   │                        │   │
+                         │   │  GET  /healthz   live  │   │
+                         │   │  GET  /readyz    ready │   │
+                         │   │  GET  /          work  │   │
+                         │   │  GET  /work?ms=  work  │   │
+                         │   │  POST /fault     inject│   │
+                         │   │  POST /recover   clear │   │
+                         │   │  GET  /metrics ──────┐ │   │
+                         │   └──────────────────────┼─┘   │
+                         │        │ JSON logs       │     │
+                         │        ▼ (stdout)        │ scrape /metrics
+                         │   (docker logs)          │ every 5s
+                         │                          ▼     │
+                         │   ┌────────────────────────┐   │
+                         │   │  prometheus  :9090      │   │
+                         │   │  stores time series     │   │
+                         │   └───────────┬────────────┘   │
+                         │               │ query (PromQL) │
+                         │               ▼                │
+                         │   ┌────────────────────────┐   │
+                         │   │  grafana     :3000      │   │
+                         │   │  RED dashboard          │   │
+                         │   │  (rate/errors/latency)  │   │
+                         │   └────────────────────────┘   │
+                         └──────────────────────────────┘
+
+Telemetry (S1.4)
+----------------
+  sentinel_requests_total{method,path,status}      counter
+  sentinel_errors_total{method,path}               counter (status >= 500)
+  sentinel_request_latency_seconds{method,path}     histogram
+  sentinel_requests_in_progress                     gauge
+  sentinel_ready                                     gauge (1 ready / 0 not)
+
+Fault experiment (S1.5)
+-----------------------
+  POST /fault?rate=0.5   -> ~50% of /work and / requests return HTTP 500
+  POST /fault?unready=true -> /readyz reports 503 (not ready)
+  POST /recover          -> clears the fault; health restored
+
+Ports
+-----
+  service     8000
+  prometheus  9090
+  grafana     3000  (admin/admin, anonymous viewer enabled)

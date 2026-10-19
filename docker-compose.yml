@@ -1,0 +1,46 @@
+# Sentinel local platform — Sprint 1
+# Start:  docker compose up -d --build
+# Stop:   docker compose down         (add -v to also remove volumes)
+services:
+  service:
+    build: .
+    image: sentinel-sample-service:0.1.0
+    container_name: sentinel-service
+    environment:
+      SERVICE_NAME: sentinel-sample-service
+      SERVICE_VERSION: "0.1.0"
+      LOG_LEVEL: INFO
+      WARMUP_SECONDS: "2"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: sentinel-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+    depends_on:
+      - service
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: sentinel-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
