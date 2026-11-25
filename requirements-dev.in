@@ -1,0 +1,6 @@
+# Test / lint tooling (never installed in the runtime image).
+#   pip-compile --generate-hashes --strip-extras -o requirements-dev.txt requirements-dev.in
+-c requirements.txt
+pytest>=9,<10
+httpx>=0.28,<0.29
+ruff>=0.15

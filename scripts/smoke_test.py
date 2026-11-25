@@ -14,7 +14,6 @@ Exit code 0 on success, non-zero on failure.
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 import time
 import urllib.request
@@ -50,7 +49,7 @@ def wait_ready(base: str, attempts: int = 30) -> None:
             status, _ = get(f"{base}/readyz")
             if status == 200:
                 return
-        except Exception:
+        except Exception:  # noqa: S110 - 503 / connection refused while warming up is expected
             pass
         time.sleep(1)
     raise SystemExit("FAIL: service never became ready")
@@ -80,7 +79,7 @@ def main() -> int:
     print(f"[smoke] /metrics OK (requests_total={before_count:.0f})")
 
     # 4. send traffic, confirm the counter moved
-    for i in range(10):
+    for _i in range(10):
         get(f"{base}/work?ms=5")
     time.sleep(0.5)
     _, after = get(f"{base}/metrics")

@@ -1,0 +1,33 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.17.1",
+  "resource_changes": [
+    {
+      "address": "module.eks.aws_eks_cluster.this",
+      "type": "aws_eks_cluster",
+      "change": {
+        "actions": ["update"],
+        "after": {
+          "name": "sentinel-dev",
+          "vpc_config": [{ "endpoint_private_access": true, "endpoint_public_access": true, "public_access_cidrs": ["0.0.0.0/0"] }],
+          "encryption_config": []
+        }
+      }
+    },
+    {
+      "address": "module.metadata_db.aws_db_instance.this",
+      "type": "aws_db_instance",
+      "change": { "actions": ["update"], "after": { "publicly_accessible": true, "storage_encrypted": true } }
+    },
+    {
+      "address": "aws_vpc_security_group_ingress_rule.debug",
+      "type": "aws_vpc_security_group_ingress_rule",
+      "change": { "actions": ["create"], "after": { "from_port": 0, "to_port": 65535, "cidr_ipv4": "0.0.0.0/0" } }
+    },
+    {
+      "address": "module.artifact_buckets[\"mlflow-artifacts\"].aws_s3_bucket.this",
+      "type": "aws_s3_bucket",
+      "change": { "actions": ["delete", "create"], "after": { "bucket": "renamed" } }
+    }
+  ]
+}

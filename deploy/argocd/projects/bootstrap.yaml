@@ -1,0 +1,22 @@
+# Project of the root app-of-apps only. It may create Argo CD Application
+# objects in the argocd namespace and nothing else, so the bootstrap path
+# cannot be abused to deploy workloads around the "sentinel" project rules.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sentinel-bootstrap
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: App-of-apps bootstrap (Applications only)
+  sourceRepos:
+    - https://github.com/yassirHam/sentinel-orion.git
+    - http://git.gitops.svc.cluster.local:3000/sentinel/sentinel-orion.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: argoproj.io
+      kind: Application

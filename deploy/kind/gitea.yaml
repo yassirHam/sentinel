@@ -1,0 +1,94 @@
+# Local Git server for testing the GitOps loop on kind WITHOUT pushing to
+# GitHub: scripts/gitops_local.py pushes the working tree here and points
+# Argo CD at it. Not used on EKS.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitops
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+# The fixture image comes from Docker Hub, which sentinel-image-references
+# forbids. Instead of weakening the policy, grant a scoped, auditable
+# exception (shows up as "skip" in PolicyReports).
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: gitops-fixture-gitea
+  namespace: kyverno
+spec:
+  policyRefs:
+    - name: sentinel-image-references
+      kind: ValidatingPolicy
+  matchConditions:
+    - name: gitea-in-gitops-namespace
+      expression: >-
+        object.metadata.namespace == 'gitops' &&
+        object.metadata.?labels[?'app.kubernetes.io/name'].orValue('') == 'gitea'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git
+  namespace: gitops
+  labels: { app.kubernetes.io/name: gitea }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: gitea }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: gitea }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gitea
+          image: gitea/gitea:1.25-rootless
+          ports:
+            - { name: http, containerPort: 3000 }
+          env:
+            - { name: GITEA__security__INSTALL_LOCK, value: "true" }
+            - { name: GITEA__server__ROOT_URL, value: "http://git.gitops.svc.cluster.local:3000/" }
+            - { name: GITEA__server__HTTP_PORT, value: "3000" }
+            - { name: GITEA__database__DB_TYPE, value: sqlite3 }
+            - { name: GITEA__service__DISABLE_REGISTRATION, value: "true" }
+            - { name: GITEA__service__REQUIRE_SIGNIN_VIEW, value: "false" }
+            - { name: GITEA__repository__ENABLE_PUSH_CREATE_USER, value: "true" }
+            - { name: GITEA__repository__DEFAULT_PUSH_CREATE_PRIVATE, value: "false" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          livenessProbe:
+            httpGet: { path: /api/healthz, port: http }
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /api/healthz, port: http }
+            periodSeconds: 5
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/gitea }
+            - { name: config, mountPath: /etc/gitea }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: data, emptyDir: {} }
+        - { name: config, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git
+  namespace: gitops
+spec:
+  selector: { app.kubernetes.io/name: gitea }
+  ports:
+    - { name: http, port: 3000, targetPort: http }

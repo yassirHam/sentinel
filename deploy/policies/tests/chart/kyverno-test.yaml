@@ -1,0 +1,26 @@
+# The Helm chart itself must satisfy every admission policy, in both
+# environments. rendered-*.yaml are produced by scripts/policy_tests.py
+# (helm template) right before the test runs, so chart and policies can
+# never drift apart unnoticed.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: sentinel-chart-complies
+policies:
+  - ../../kyverno/pod-security.yaml
+  - ../../kyverno/workload-standards.yaml
+resources:
+  - rendered-dev.yaml
+  - rendered-prod.yaml
+variables: ../pods/values.yaml
+results:
+  - { isValidatingPolicy: true, policy: sentinel-pod-hardening, kind: Deployment, result: pass,
+      resources: [sentinel-dev/sentinel-sentinel-service, sentinel-prod/sentinel-sentinel-service] }
+  - { isValidatingPolicy: true, policy: sentinel-require-resources, kind: Deployment, result: pass,
+      resources: [sentinel-dev/sentinel-sentinel-service, sentinel-prod/sentinel-sentinel-service] }
+  - { isValidatingPolicy: true, policy: sentinel-image-references, kind: Deployment, result: pass,
+      resources: [sentinel-dev/sentinel-sentinel-service, sentinel-prod/sentinel-sentinel-service] }
+  - { isValidatingPolicy: true, policy: sentinel-require-probes, kind: Deployment, result: pass,
+      resources: [sentinel-dev/sentinel-sentinel-service, sentinel-prod/sentinel-sentinel-service] }
+  - { isValidatingPolicy: true, policy: sentinel-pod-hardening, kind: Pod, result: pass,
+      resources: [sentinel-dev/sentinel-sentinel-service-test, sentinel-prod/sentinel-sentinel-service-test] }

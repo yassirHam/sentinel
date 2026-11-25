@@ -1,0 +1,13 @@
+# Runtime dependencies of the Sentinel sample service (top-level only).
+# The image only ships what it runs: uvicorn's [standard] extra is NOT used
+# because it drags in watchfiles (dev reload), websockets, python-dotenv and
+# PyYAML, none of which this service needs (smaller attack surface / SBOM).
+#
+# Compile the hash-locked requirements.txt inside the target image so wheel
+# hashes and markers match Linux (see README "Dependencies"):
+#   pip-compile --generate-hashes --strip-extras --no-emit-index-url -o requirements.txt requirements.in
+fastapi>=0.162,<0.163
+uvicorn>=0.54,<0.55
+httptools>=0.9,<0.10
+uvloop>=0.23,<0.24 ; sys_platform != "win32"
+prometheus-client>=0.26,<0.27

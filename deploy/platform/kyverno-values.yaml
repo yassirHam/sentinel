@@ -1,0 +1,29 @@
+# Kyverno (chart 3.9.2 / app v1.19.2) — local kind profile.
+# On EKS the same file is used by the Argo CD "kyverno" Application with
+# admissionController.replicas raised to 3 (see deploy/argocd/apps).
+admissionController:
+  replicas: 1
+  container:
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { memory: 512Mi }
+backgroundController:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+cleanupController:
+  enabled: true
+reportsController:
+  enabled: true
+config:
+  # Never let a Kyverno outage block the control plane's own namespaces.
+  webhooks:
+    - namespaceSelector:
+        matchExpressions:
+          - key: kubernetes.io/metadata.name
+            operator: NotIn
+            values: [kube-system, kyverno]
+features:
+  policyExceptions:
+    enabled: true
+    namespace: kyverno   # exceptions may only be created in the kyverno namespace

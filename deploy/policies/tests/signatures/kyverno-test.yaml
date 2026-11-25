@@ -1,0 +1,11 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cosign-keyless-mechanism
+policies:
+  - policies.yaml
+resources:
+  - resources.yaml
+results:
+  - { isImageValidatingPolicy: true, policy: accept-distroless-identity, kind: Pod, result: pass, resources: [signed-distroless] }
+  - { isImageValidatingPolicy: true, policy: reject-wrong-identity, kind: Pod, result: fail, resources: [signed-distroless] }

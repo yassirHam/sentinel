@@ -1,0 +1,79 @@
+# Policy-as-code on the Terraform *plan* (JSON from `terraform show -json`),
+# evaluated in CI with the Kyverno CLI before any apply:
+#
+#   kyverno apply sentinel/infra/policies/terraform-plan.yaml --json plan.json
+#
+# Static scanners (Trivy) read the HCL; this reads what will *actually* be
+# created after variables, modules and defaults are resolved — e.g. a tfvars
+# file that opens the EKS API to the world is caught here, not in HCL.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: terraform-plan-guardrails
+spec:
+  evaluation:
+    mode: JSON
+  matchConditions:
+    - name: is-terraform-plan
+      expression: has(object.terraform_version) && has(object.resource_changes)
+  variables:
+    - name: live
+      # resources that will exist after apply (create / update / no-op), with known attributes
+      expression: >-
+        object.resource_changes.filter(r, has(r.change.after) && r.change.after != null &&
+          !(r.change.actions.size() == 1 && r.change.actions[0] == 'delete'))
+  validations:
+    - message: EKS public API endpoint must not be open to 0.0.0.0/0
+      expression: >-
+        variables.live.filter(r, r.type == 'aws_eks_cluster').all(r,
+          r.change.after.vpc_config.all(v,
+            !v.endpoint_public_access ||
+            (has(v.public_access_cidrs) && v.public_access_cidrs.size() > 0 && !v.public_access_cidrs.exists(c, c == '0.0.0.0/0'))))
+    - message: EKS secrets must be envelope-encrypted with KMS
+      expression: >-
+        variables.live.filter(r, r.type == 'aws_eks_cluster').all(r,
+          has(r.change.after.encryption_config) && r.change.after.encryption_config.exists(e, e.resources.exists(x, x == 'secrets')))
+    - message: S3 buckets must block all public access
+      expression: >-
+        variables.live.filter(r, r.type == 'aws_s3_bucket_public_access_block').all(r,
+          r.change.after.block_public_acls && r.change.after.block_public_policy &&
+          r.change.after.ignore_public_acls && r.change.after.restrict_public_buckets)
+    - message: RDS instances must be private and encrypted
+      expression: >-
+        variables.live.filter(r, r.type == 'aws_db_instance').all(r,
+          r.change.after.publicly_accessible == false && r.change.after.storage_encrypted == true)
+    - message: ECR repositories must use immutable tags
+      expression: >-
+        variables.live.filter(r, r.type == 'aws_ecr_repository').all(r, r.change.after.image_tag_mutability == 'IMMUTABLE')
+    - message: no security-group rule may open SSH/RDP/PostgreSQL to the internet
+      expression: >-
+        variables.live.filter(r, r.type == 'aws_vpc_security_group_ingress_rule').all(r,
+          !(has(r.change.after.cidr_ipv4) && r.change.after.cidr_ipv4 == '0.0.0.0/0' &&
+            has(r.change.after.from_port) && [22, 3389, 5432].exists(p, r.change.after.from_port <= p && p <= r.change.after.to_port)))
+    - message: launch templates must require IMDSv2
+      expression: >-
+        variables.live.filter(r, r.type == 'aws_launch_template').all(r,
+          r.change.after.metadata_options.all(m, m.http_tokens == 'required'))
+---
+# Destructive-change guard: a plan that deletes or replaces stateful
+# resources fails CI; the operator must re-run with an explicit, reviewed
+# approval (see docs/cicd.md "Destroying stateful resources").
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: terraform-plan-no-stateful-destroy
+spec:
+  evaluation:
+    mode: JSON
+  matchConditions:
+    - name: is-terraform-plan
+      expression: has(object.terraform_version) && has(object.resource_changes)
+  validations:
+    - messageExpression: >-
+        'plan destroys stateful resources: ' + object.resource_changes.filter(r,
+          r.type in ['aws_db_instance', 'aws_s3_bucket', 'aws_kms_key', 'aws_eks_cluster', 'aws_ecr_repository'] &&
+          r.change.actions.exists(a, a == 'delete')).map(r, r.address).join(', ')
+      expression: >-
+        !object.resource_changes.exists(r,
+          r.type in ['aws_db_instance', 'aws_s3_bucket', 'aws_kms_key', 'aws_eks_cluster', 'aws_ecr_repository'] &&
+          r.change.actions.exists(a, a == 'delete'))

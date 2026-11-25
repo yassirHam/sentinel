@@ -1,0 +1,57 @@
+# Supply-chain gate: an image from the Sentinel ECR registry is only admitted
+# if it was signed *keyless* by our CI workflow on the release branch (Cosign
+# + GitHub OIDC -> Fulcio certificate, logged in Rekor) AND carries a signed
+# SPDX SBOM attestation produced by the same workflow.
+#
+# Nothing to rotate or leak: there is no signing key. The trust anchor is the
+# workflow identity, which only a merge to master can exercise.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: sentinel-verify-signed-images
+  annotations:
+    policies.kyverno.io/title: Signed images + SBOM attestation from Sentinel CI
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: critical
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 20
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "*.dkr.ecr.*.amazonaws.com/sentinel/*"
+  credentials:
+    providers: [amazon]
+  validationConfigurations:
+    required: true
+    verifyDigest: true
+    mutateDigest: true
+  attestors:
+    - name: sentinelCi
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subject: https://github.com/yassirHam/sentinel-orion/.github/workflows/sentinel-ci.yml@refs/heads/master
+        ctlog:
+          url: https://rekor.sigstore.dev
+  attestations:
+    - name: sbom
+      intoto:
+        type: https://spdx.dev/Document
+  validations:
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.sentinelCi])).all(e, e > 0)
+      message: image is not signed by the Sentinel CI workflow on master
+    - expression: >-
+        images.containers.map(image, verifyAttestationSignatures(image, attestations.sbom, [attestors.sentinelCi])).all(e, e > 0)
+      message: image has no SBOM attestation signed by the Sentinel CI workflow

@@ -1,0 +1,113 @@
+# Operability standards: every workload declares resources and health probes,
+# so the scheduler can bin-pack it, the kubelet can restart it and the
+# Service only routes to ready replicas.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: sentinel-require-resources
+  annotations:
+    policies.kyverno.io/title: Require CPU/memory requests and a memory limit
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions: [Deny]
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs, replicasets]
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, local-path-storage, kyverno, argocd, monitoring]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  validations:
+    - expression: >-
+        object.spec.containers.all(c,
+          has(c.resources) && has(c.resources.requests) &&
+          'cpu' in c.resources.requests && 'memory' in c.resources.requests)
+      message: every container must request cpu and memory
+    - expression: >-
+        object.spec.containers.all(c, has(c.resources) && has(c.resources.limits) && 'memory' in c.resources.limits)
+      message: every container must set a memory limit (an unbounded container can OOM the node)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: sentinel-require-probes
+  annotations:
+    policies.kyverno.io/title: Require liveness and readiness probes
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, local-path-storage, kyverno, argocd, monitoring]
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets]
+  validations:
+    - expression: >-
+        object.spec.template.spec.containers.all(c, has(c.livenessProbe) && has(c.readinessProbe))
+      message: long-running workloads must define livenessProbe and readinessProbe
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: sentinel-image-references
+  annotations:
+    policies.kyverno.io/title: Pinned images from trusted registries
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Images must carry an explicit tag or digest (never ":latest" / no tag)
+      and come from the Sentinel ECR registry, or — for local kind clusters —
+      the locally built sentinel-* images. In namespaces labelled
+      sentinel.io/env=prod a digest is mandatory.
+spec:
+  validationActions: [Deny]
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs, replicasets]
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, local-path-storage, kyverno, argocd, monitoring]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: images
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([])).map(c, c.image)
+    - name: isProd
+      expression: >-
+        namespaceObject != null &&
+        namespaceObject.metadata.?labels[?'sentinel.io/env'].orValue('') == 'prod'
+  validations:
+    - expression: >-
+        variables.images.all(i, i.contains('@sha256:') || (i.split('/')[i.split('/').size() - 1].contains(':') && !i.endsWith(':latest')))
+      message: images must be pinned by tag or digest; ':latest' and untagged images are forbidden
+    - expression: >-
+        variables.images.all(i,
+          i.matches('^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com/sentinel/') ||
+          i.matches('^(docker\\.io/library/)?sentinel-[a-z0-9-]+[:@]') ||
+          i.matches('^(docker\\.io/library/)?busybox:[0-9.]+@sha256:'))
+      message: images must come from the Sentinel ECR registry (or local sentinel-* builds on kind)
+    - expression: >-
+        !variables.isProd || variables.images.all(i, i.contains('@sha256:'))
+      message: production namespaces only accept images referenced by digest

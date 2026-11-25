@@ -1,0 +1,5 @@
+# Build context = only what the image needs (requirements.txt + app/).
+*
+!requirements.txt
+!app/
+app/**/__pycache__

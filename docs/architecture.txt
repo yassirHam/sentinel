@@ -54,3 +54,29 @@ Ports
   service     8000
   prometheus  9090
   grafana     3000  (admin/admin, anonymous viewer enabled)
+
+
+Months 1-2 — target platform (AWS, Terraform; see infrastructure.md)
+====================================================================
+
+  GitHub ──PR──▶ Actions (OIDC, no keys) ──▶ test · policy · Trivy · SBOM
+                     │ master
+                     ▼
+                 ECR (immutable tag, KMS) ◀── cosign sign + SBOM attestation (keyless)
+                     │ digest
+                     ▼
+                 Git: values-dev.yaml ◀── promote-dev commit
+                     │ pull
+  ┌──────────────────┼──────────── VPC 10.40.0.0/16, 3 AZ ───────────────────┐
+  │ public /24 x3    │  ALB / NAT                                             │
+  │ private /19 x3   ▼                                                        │
+  │   EKS 1.36 (private API, KMS secrets, IMDSv2, Pod Identity)               │
+  │     argocd ── syncs ──▶ kyverno (admission: hardening, digests, signatures)│
+  │                       ─▶ sentinel-dev / sentinel-prod (Helm chart)        │
+  │     node pools: system · workloads (spot in dev) · gpu 0-2 (prod, tainted)│
+  │ database /24 x3 (no route out): RDS PostgreSQL (MLflow backend, PITR)     │
+  └───────────────────────────────────────────────────────────────────────────┘
+  S3: tfstate (bootstrap) · mlflow-artifacts · dvc-remote   (private, SSE-KMS, TLS-only)
+
+Local equivalent used for verification: kind 1.36 (3 zones) + Kyverno + Argo CD
++ in-cluster Gitea (scripts/k8s_local.py, scripts/gitops_local.py).

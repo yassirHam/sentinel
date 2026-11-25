@@ -18,15 +18,15 @@ log collector can parse them without a regex.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import random
-import sys
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     Counter,
@@ -84,6 +84,10 @@ class ServiceState:
         # /work (and /) requests fail with HTTP 500.
         self.fault_rate = 0.0
         self.forced_unready = False
+        # Fault endpoints are opt-in (local compose / dev only).
+        self.fault_injection_enabled = os.getenv("ENABLE_FAULT_INJECTION", "false").lower() in {
+            "1", "true", "yes",
+        }
 
     @property
     def ready(self) -> bool:
@@ -116,23 +120,30 @@ app = FastAPI(title=SERVICE_NAME, version=VERSION, lifespan=lifespan)
 @app.middleware("http")
 async def telemetry_middleware(request: Request, call_next):
     # /metrics is excluded from its own accounting to avoid feedback noise.
-    path = request.url.path
+    raw_path = request.url.path
     method = request.method
-    if path == "/metrics":
+    if raw_path == "/metrics":
         return await call_next(request)
 
     IN_PROGRESS.inc()
     start = time.perf_counter()
     status_code = 500
+    path = raw_path
     try:
         response = await call_next(request)
         status_code = response.status_code
         return response
     except Exception:  # noqa: BLE001 — convert unexpected errors to 500 + metric
-        ERRORS.labels(method=method, path=path).inc()
+        # status_code stays 500; the error is counted exactly once in `finally`
+        # (Sprint-1 counted it twice: here and in the 5xx branch below).
         log.exception("unhandled_exception", extra={"path": path, "method": method})
         return JSONResponse(status_code=500, content={"error": "internal_error"})
     finally:
+        # Label by route *template*, never the raw URL: a scanner probing
+        # thousands of random paths must not create thousands of time series
+        # (unbounded label cardinality is a memory DoS on the service and on
+        # Prometheus). Unmatched paths collapse into one "<unmatched>" label.
+        path = _route_label(request)
         elapsed = time.perf_counter() - start
         LATENCY.labels(method=method, path=path).observe(elapsed)
         REQUESTS.labels(method=method, path=path, status=str(status_code)).inc()
@@ -143,11 +154,18 @@ async def telemetry_middleware(request: Request, call_next):
             "request",
             extra={
                 "method": method,
-                "path": path,
+                "path": raw_path,
+                "route": path,
                 "status": status_code,
                 "latency_ms": round(elapsed * 1000, 2),
             },
         )
+
+
+def _route_label(request: Request) -> str:
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    return template if template else "<unmatched>"
 
 
 # --------------------------------------------------------------------------- #
@@ -192,16 +210,20 @@ async def root() -> dict:
 
 @app.get("/work")
 async def work(ms: int = 0) -> dict:
-    """Simulate a unit of work. ?ms=N adds N milliseconds of latency."""
+    """Simulate a unit of work. ?ms=N adds N milliseconds of latency (max 5 s)."""
+    ms = max(0, min(ms, 5000))
     if ms > 0:
-        time.sleep(min(ms, 5000) / 1000.0)
+        # asyncio.sleep, not time.sleep: a blocking sleep inside an async
+        # handler froze the whole event loop (every concurrent request,
+        # including /healthz, waited behind it).
+        await asyncio.sleep(ms / 1000.0)
     _maybe_fail()
     return {"did_work": True, "slept_ms": ms}
 
 
 def _maybe_fail() -> None:
     """Raise a 500-equivalent error according to the configured fault rate."""
-    if state.fault_rate > 0 and random.random() < state.fault_rate:
+    if state.fault_rate > 0 and random.random() < state.fault_rate:  # noqa: S311 - fault sampling, not crypto
         raise RuntimeError("injected fault (S1.5)")
 
 
@@ -214,7 +236,11 @@ async def set_fault(rate: float = 1.0, unready: bool = False) -> dict:
     Enable a controlled fault.
       rate     : fraction of /work and / requests that fail (0..1).
       unready  : if true, force /readyz to report not-ready.
+
+    Disabled unless ENABLE_FAULT_INJECTION=true: an unauthenticated endpoint
+    that breaks the service must never be reachable in production.
     """
+    _require_fault_injection()
     state.fault_rate = max(0.0, min(1.0, rate))
     state.forced_unready = unready
     log.warning(
@@ -227,10 +253,16 @@ async def set_fault(rate: float = 1.0, unready: bool = False) -> dict:
 @app.post("/recover")
 async def recover() -> dict:
     """Clear any injected fault and restore normal operation."""
+    _require_fault_injection()
     state.fault_rate = 0.0
     state.forced_unready = False
     log.info("fault_cleared")
     return {"fault_rate": 0.0, "forced_unready": False}
+
+
+def _require_fault_injection() -> None:
+    if not state.fault_injection_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
 
 
 if __name__ == "__main__":  # pragma: no cover - manual local run

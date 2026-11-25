@@ -1,0 +1,51 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.17.1",
+  "resource_changes": [
+    {
+      "address": "module.eks.aws_eks_cluster.this",
+      "type": "aws_eks_cluster",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "name": "sentinel-dev",
+          "vpc_config": [{ "endpoint_private_access": true, "endpoint_public_access": false, "public_access_cidrs": null }],
+          "encryption_config": [{ "resources": ["secrets"], "provider": [{}] }]
+        }
+      }
+    },
+    {
+      "address": "module.artifact_buckets[\"dvc-remote\"].aws_s3_bucket_public_access_block.this",
+      "type": "aws_s3_bucket_public_access_block",
+      "change": {
+        "actions": ["create"],
+        "after": { "block_public_acls": true, "block_public_policy": true, "ignore_public_acls": true, "restrict_public_buckets": true }
+      }
+    },
+    {
+      "address": "module.metadata_db.aws_db_instance.this",
+      "type": "aws_db_instance",
+      "change": { "actions": ["update"], "after": { "publicly_accessible": false, "storage_encrypted": true } }
+    },
+    {
+      "address": "module.ecr.aws_ecr_repository.this[\"sample-service\"]",
+      "type": "aws_ecr_repository",
+      "change": { "actions": ["no-op"], "after": { "image_tag_mutability": "IMMUTABLE" } }
+    },
+    {
+      "address": "module.metadata_db.aws_vpc_security_group_ingress_rule.postgres[\"eks\"]",
+      "type": "aws_vpc_security_group_ingress_rule",
+      "change": { "actions": ["create"], "after": { "from_port": 5432, "to_port": 5432, "cidr_ipv4": null } }
+    },
+    {
+      "address": "module.eks.aws_launch_template.node[\"system\"]",
+      "type": "aws_launch_template",
+      "change": { "actions": ["create"], "after": { "metadata_options": [{ "http_tokens": "required", "http_put_response_hop_limit": 1 }] } }
+    },
+    {
+      "address": "module.network.aws_s3_bucket.legacy",
+      "type": "aws_s3_bucket_versioning",
+      "change": { "actions": ["delete"], "after": null }
+    }
+  ]
+}

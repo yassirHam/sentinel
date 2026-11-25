@@ -1,0 +1,12 @@
+# dev overlay — managed by GitOps: CI rewrites image.tag / image.digest on
+# every merge to master (see .github/workflows/sentinel-ci.yml, "promote").
+image:
+  repository: sentinel-sample-service
+  tag: "0.2.0"
+  digest: ""
+app:
+  logLevel: DEBUG
+  faultInjection: true      # dev is where chaos / fault experiments run
+autoscaling:
+  minReplicas: 2
+  maxReplicas: 3

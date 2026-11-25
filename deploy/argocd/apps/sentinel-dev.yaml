@@ -1,0 +1,42 @@
+# dev: continuously deployed. CI commits the new image digest to
+# values-dev.yaml after build+scan+sign; Argo CD syncs it automatically and
+# reverts any manual drift (selfHeal).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sentinel-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: sentinel
+  source:
+    repoURL: https://github.com/yassirHam/sentinel-orion.git
+    targetRevision: master
+    path: sentinel/deploy/helm/sentinel-service
+    helm:
+      releaseName: sentinel
+      valueFiles: [values-dev.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sentinel-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+    managedNamespaceMetadata:
+      labels:
+        sentinel.io/env: dev
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: latest
+    retry:
+      limit: 5
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }
+  ignoreDifferences:
+    # replicas are owned by the HorizontalPodAutoscaler
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]

@@ -1,0 +1,23 @@
+# prod overlay — promoted manually (PR) from a digest already running in dev.
+image:
+  repository: sentinel-sample-service
+  tag: "0.2.0"
+  digest: ""
+  pullPolicy: IfNotPresent
+app:
+  logLevel: INFO
+  faultInjection: false
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 10
+podDisruptionBudget:
+  minAvailable: 2
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+metrics:
+  serviceMonitor:
+    enabled: true

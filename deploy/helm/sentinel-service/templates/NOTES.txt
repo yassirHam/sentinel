@@ -1,0 +1,8 @@
+{{ include "sentinel-service.fullname" . }} deployed (image {{ include "sentinel-service.image" . }}).
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "sentinel-service.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "sentinel-service.fullname" . }} 8080:{{ .Values.service.port }}
+  curl -s localhost:8080/readyz && curl -s localhost:8080/metrics | head
+  helm test -n {{ .Release.Namespace }} {{ .Release.Name }}
+
+Fault injection endpoints: {{ if .Values.app.faultInjection }}ENABLED (dev/chaos only){{ else }}disabled{{ end }}.

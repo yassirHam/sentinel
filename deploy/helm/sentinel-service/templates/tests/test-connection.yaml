@@ -1,0 +1,47 @@
+# `helm test <release>`: from inside the namespace (allowed by the
+# NetworkPolicy), the Service must answer /healthz, /readyz and /metrics.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "sentinel-service.fullname" . }}-test
+  labels:
+    # Deliberately NOT the selector labels: otherwise this pod would become a
+    # Service endpoint and inherit the service's egress-deny NetworkPolicy.
+    helm.sh/chart: {{ include "sentinel-service.chart" . }}
+    app.kubernetes.io/part-of: sentinel
+    app.kubernetes.io/component: helm-test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: {{ .Values.tests.image | quote }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          memory: 32Mi
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -e
+          base="http://{{ include "sentinel-service.fullname" . }}:{{ .Values.service.port }}"
+          wget -q -O- "$base/healthz"
+          wget -q -O- "$base/readyz"
+          wget -q -O- "$base/metrics" | grep -q '^sentinel_requests_total'
+          echo "helm test OK"

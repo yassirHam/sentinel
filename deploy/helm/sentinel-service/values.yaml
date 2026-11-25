@@ -1,0 +1,118 @@
+# Default values = production-grade and secure by default. Environment
+# overlays (values-dev.yaml, values-prod.yaml) only change what differs.
+
+replicaCount: 2
+
+image:
+  repository: sentinel-sample-service
+  # Deploy by digest whenever possible: CI writes the digest it built, signed
+  # and scanned; the tag is informational only.
+  tag: "0.2.0"
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # The service never calls the Kubernetes API: do not mount a token.
+  automountToken: false
+
+podAnnotations: {}
+podLabels: {}
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+app:
+  logLevel: INFO
+  warmupSeconds: 2
+  # POST /fault and /recover. Only for dev / chaos experiments.
+  faultInjection: false
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  privileged: false
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    memory: 256Mi   # no CPU limit on purpose: avoids CFS throttling latency spikes
+
+probes:
+  startup:
+    path: /healthz
+    periodSeconds: 2
+    failureThreshold: 30
+  liveness:
+    path: /healthz
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 2
+
+# Give endpoints time to be removed from Services/load balancers before the
+# process receives SIGTERM (native sleep action, Kubernetes >= 1.30).
+lifecycle:
+  preStopSleepSeconds: 5
+terminationGracePeriodSeconds: 30
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+topologySpread:
+  enabled: true
+  maxSkew: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to call the service (matched on the well-known
+  # kubernetes.io/metadata.name label). The release namespace is always allowed.
+  allowFromNamespaces: []
+  # Namespace running Prometheus (scrapes /metrics on the container port).
+  monitoringNamespace: monitoring
+
+metrics:
+  podAnnotations: true        # prometheus.io/scrape for annotation-based discovery
+  serviceMonitor:
+    enabled: false            # requires the Prometheus Operator CRDs
+    interval: 15s
+    labels: {}
+
+tests:
+  image: busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec

@@ -1,0 +1,57 @@
+# Argo CD (chart 10.11.6 / app v3.5.6).
+# Pull-based GitOps: the cluster pulls desired state from Git, so CI never
+# holds cluster credentials (no kubeconfig secret in GitHub at all).
+global:
+  networkPolicy:
+    create: true        # restrict traffic between Argo CD components
+    defaultDenyIngress: false
+
+configs:
+  params:
+    server.insecure: false
+    application.namespaces: ""          # Applications only in the argocd namespace
+  cm:
+    admin.enabled: true                 # local bootstrap only; SSO (OIDC) on EKS
+    exec.enabled: false                 # no web terminal into pods
+    statusbadge.enabled: false
+    timeout.reconciliation: 60s
+    # Kyverno policy reports churn constantly; never track them.
+    resource.exclusions: |
+      - apiGroups: ["wgpolicyk8s.io", "reports.kyverno.io", "openreports.io"]
+        kinds: ["*"]
+        clusters: ["*"]
+  rbac:
+    policy.default: role:readonly
+    policy.csv: |
+      # Platform admins (Yassir: Cloud/K8s/DevSecOps axis) — full control.
+      g, sentinel:platform-admins, role:admin
+      # Everyone else authenticated: read-only; may trigger a sync of dev only.
+      p, role:developer, applications, get, sentinel/*, allow
+      p, role:developer, applications, sync, sentinel/sentinel-dev, allow
+      g, sentinel:developers, role:developer
+
+dex:
+  enabled: false
+
+notifications:
+  enabled: false
+
+applicationSet:
+  replicas: 1
+
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+server:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+redis:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 128Mi }

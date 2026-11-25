@@ -1,0 +1,72 @@
+# Sentinel admission policies — workload hardening (CEL ValidatingPolicy,
+# policies.kyverno.io/v1; the legacy ClusterPolicy kind is deprecated in
+# Kyverno 1.19 and removed in 1.20).
+#
+# Scope: every namespace except the platform's own system namespaces. The
+# exclusion list is explicit so that a new namespace is enforced by default.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: sentinel-pod-hardening
+  annotations:
+    policies.kyverno.io/title: Hardened pod security context
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Containers must run as non-root, without privilege escalation, with all
+      Linux capabilities dropped, a read-only root filesystem and the
+      RuntimeDefault seccomp profile. Mirrors the chart defaults so a
+      regression in any chart is caught at admission, not in an audit.
+spec:
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs, replicasets]
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, local-path-storage, kyverno, argocd, monitoring]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: containers
+      expression: >-
+        object.spec.containers + object.spec.?initContainers.orValue([]) + object.spec.?ephemeralContainers.orValue([])
+    - name: podRunAsNonRoot
+      expression: object.spec.?securityContext.?runAsNonRoot.orValue(false)
+    - name: podSeccomp
+      expression: object.spec.?securityContext.?seccompProfile.?type.orValue('')
+  validations:
+    - expression: >-
+        variables.containers.all(c, c.?securityContext.?runAsNonRoot.orValue(variables.podRunAsNonRoot) == true)
+      message: containers must run as non-root (securityContext.runAsNonRoot=true at pod or container level)
+    - expression: >-
+        variables.containers.all(c, c.?securityContext.?allowPrivilegeEscalation.orValue(true) == false)
+      message: securityContext.allowPrivilegeEscalation must be false
+    - expression: >-
+        variables.containers.all(c, c.?securityContext.?privileged.orValue(false) == false)
+      message: privileged containers are forbidden
+    - expression: >-
+        variables.containers.all(c, c.?securityContext.?capabilities.?drop.orValue([]).exists(x, x == 'ALL'))
+      message: containers must drop ALL capabilities
+    - expression: >-
+        variables.containers.all(c, c.?securityContext.?readOnlyRootFilesystem.orValue(false) == true)
+      message: containers must use a read-only root filesystem (mount an emptyDir for scratch space)
+    - expression: >-
+        variables.podSeccomp == 'RuntimeDefault' || variables.podSeccomp == 'Localhost' ||
+        variables.containers.all(c, c.?securityContext.?seccompProfile.?type.orValue('') in ['RuntimeDefault', 'Localhost'])
+      message: a RuntimeDefault (or Localhost) seccomp profile is required
+    - expression: >-
+        !object.spec.?hostNetwork.orValue(false) && !object.spec.?hostPID.orValue(false) && !object.spec.?hostIPC.orValue(false)
+      message: host namespaces (hostNetwork / hostPID / hostIPC) are forbidden
+    - expression: >-
+        object.spec.?volumes.orValue([]).all(v, !has(v.hostPath))
+      message: hostPath volumes are forbidden

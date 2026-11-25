@@ -1,0 +1,245 @@
+# Hand-written admission cases: one compliant pod and one pod per violation.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-pod
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: sentinel-sample-service:0.2.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-ecr-digest
+  namespace: sentinel-prod
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: 123456789012.dkr.ecr.eu-west-3.amazonaws.com/sentinel/sample-service@sha256:51276b5f73b9f209ba22cc18032670799eee457d824b4e0c56c33ea1f8024a46
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-root
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: sentinel-sample-service:0.2.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-privileged
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: sentinel-sample-service:0.2.0
+      securityContext:
+        privileged: true
+        allowPrivilegeEscalation: true
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-writable-rootfs
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: sentinel-sample-service:0.2.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-hostpath
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: sentinel-sample-service:0.2.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+      volumeMounts: [{ name: host, mountPath: /host }]
+  volumes:
+    - name: host
+      hostPath: { path: /var/run }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-no-resources
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: sentinel-sample-service:0.2.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-latest
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: sentinel-sample-service:latest
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-untagged
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: sentinel-sample-service
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-registry
+  namespace: sentinel-dev
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: docker.io/nginx:1.29.3
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-prod-tag-only
+  namespace: sentinel-prod
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: app
+      image: 123456789012.dkr.ecr.eu-west-3.amazonaws.com/sentinel/sample-service:0.2.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 50m, memory: 96Mi }
+        limits: { memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-no-probes
+  namespace: sentinel-dev
+spec:
+  selector: { matchLabels: { app: x } }
+  template:
+    metadata: { labels: { app: x } }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: sentinel-sample-service:0.2.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi }

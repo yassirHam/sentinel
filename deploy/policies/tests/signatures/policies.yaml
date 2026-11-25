@@ -1,0 +1,63 @@
+# Online test of the *mechanism* used by sentinel-verify-signed-images:
+# Cosign keyless verification (Fulcio certificate identity + Rekor) through a
+# Kyverno ImageValidatingPolicy. Our own ECR images are private, so the test
+# uses a public image signed the same way (Google distroless, keyless).
+#
+#   accept-distroless-identity   correct identity    -> must PASS
+#   reject-wrong-identity        Sentinel CI identity -> must FAIL (proves an
+#                                image signed by someone else is refused)
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: accept-distroless-identity
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "gcr.io/distroless/*"
+  attestors:
+    - name: distroless
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://accounts.google.com
+              subject: keyless@distroless.iam.gserviceaccount.com
+        ctlog:
+          url: https://rekor.sigstore.dev
+  validations:
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.distroless])).all(e, e > 0)
+      message: image is not signed by the distroless release identity
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: reject-wrong-identity
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "gcr.io/distroless/*"
+  attestors:
+    - name: sentinelCi
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subject: https://github.com/yassirHam/sentinel-orion/.github/workflows/sentinel-ci.yml@refs/heads/master
+        ctlog:
+          url: https://rekor.sigstore.dev
+  validations:
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.sentinelCi])).all(e, e > 0)
+      message: image is not signed by the Sentinel CI workflow on master

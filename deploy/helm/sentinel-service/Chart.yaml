@@ -1,0 +1,14 @@
+apiVersion: v2
+name: sentinel-service
+description: Sentinel reference service (health, readiness, Prometheus metrics, controlled fault injection) with a hardened Kubernetes deployment.
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/yassirHam/sentinel-orion
+sources:
+  - https://github.com/yassirHam/sentinel-orion/tree/master/sentinel
+maintainers:
+  - name: Yassir Hamri
+    url: https://github.com/yassirHam
+keywords: [sentinel, observability, fastapi]

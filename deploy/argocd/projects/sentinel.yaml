@@ -1,0 +1,65 @@
+# AppProject = the blast-radius boundary of everything Argo CD deploys for
+# Sentinel: which Git/Helm sources are trusted, which namespaces may be
+# written, and which cluster-scoped kinds are allowed.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sentinel
+  namespace: argocd
+  # Refuse to delete the project while Applications still reference it.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Sentinel platform workloads and policies
+  sourceRepos:
+    - https://github.com/yassirHam/sentinel-orion.git
+    - https://kyverno.github.io/kyverno/
+    # local kind GitOps loop (scripts/gitops_local.py)
+    - http://git.gitops.svc.cluster.local:3000/sentinel/sentinel-orion.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: sentinel-dev
+    - server: https://kubernetes.default.svc
+      namespace: sentinel-prod
+    - server: https://kubernetes.default.svc
+      namespace: kyverno
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: policies.kyverno.io
+      kind: ValidatingPolicy
+    - group: policies.kyverno.io
+      kind: ImageValidatingPolicy
+    # Kyverno's own chart installs CRDs, webhooks and RBAC.
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceBlacklist:
+    # Workloads may not grant themselves quota/limit exemptions.
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+  orphanedResources:
+    warn: true
+  syncWindows:
+    # Production changes only during staffed hours (Mon-Fri 08:00-18:00
+    # Africa/Casablanca); manual syncs outside the window are refused too.
+    - kind: allow
+      schedule: "0 8 * * 1-5"
+      duration: 10h
+      timeZone: Africa/Casablanca
+      applications: [sentinel-prod]
+      manualSync: false
+  roles:
+    - name: ci-readonly
+      description: Read-only token for CI status checks (argocd app wait / get)
+      policies:
+        - p, proj:sentinel:ci-readonly, applications, get, sentinel/*, allow

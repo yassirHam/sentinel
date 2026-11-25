@@ -1,0 +1,14 @@
+# Namespace objects seen by the policies (namespaceObject in CEL).
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Values
+metadata:
+  name: values
+namespaceSelector:
+  - name: sentinel-dev
+    labels:
+      kubernetes.io/metadata.name: sentinel-dev
+      sentinel.io/env: dev
+  - name: sentinel-prod
+    labels:
+      kubernetes.io/metadata.name: sentinel-prod
+      sentinel.io/env: prod

@@ -1,0 +1,29 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: sentinel-admission-policies
+policies:
+  - ../../kyverno/pod-security.yaml
+  - ../../kyverno/workload-standards.yaml
+resources:
+  - resources.yaml
+variables: values.yaml
+results:
+  # --- hardening -----------------------------------------------------------
+  - { isValidatingPolicy: true, policy: sentinel-pod-hardening, kind: Pod, result: pass,
+      resources: [good-pod, good-ecr-digest, bad-no-resources, bad-latest, bad-untagged, bad-registry, bad-prod-tag-only] }
+  - { isValidatingPolicy: true, policy: sentinel-pod-hardening, kind: Pod, result: fail,
+      resources: [bad-root, bad-privileged, bad-writable-rootfs, bad-hostpath] }
+  # --- resources -----------------------------------------------------------
+  - { isValidatingPolicy: true, policy: sentinel-require-resources, kind: Pod, result: pass,
+      resources: [good-pod, good-ecr-digest] }
+  - { isValidatingPolicy: true, policy: sentinel-require-resources, kind: Pod, result: fail,
+      resources: [bad-no-resources] }
+  # --- image references ----------------------------------------------------
+  - { isValidatingPolicy: true, policy: sentinel-image-references, kind: Pod, result: pass,
+      resources: [good-pod, good-ecr-digest] }
+  - { isValidatingPolicy: true, policy: sentinel-image-references, kind: Pod, result: fail,
+      resources: [bad-latest, bad-untagged, bad-registry, bad-prod-tag-only] }
+  # --- probes --------------------------------------------------------------
+  - { isValidatingPolicy: true, policy: sentinel-require-probes, kind: Deployment, result: fail,
+      resources: [bad-no-probes] }

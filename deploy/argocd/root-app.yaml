@@ -1,0 +1,32 @@
+# App-of-apps: the only Application created by hand (`kubectl apply -f`).
+# Everything else under deploy/argocd/apps is created and reconciled by it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sentinel-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: sentinel-bootstrap
+  source:
+    repoURL: https://github.com/yassirHam/sentinel-orion.git
+    targetRevision: master
+    path: sentinel/deploy/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true
+  # Argo CD itself adds pre-delete-finalizer.* to child Applications whose
+  # chart has PreDelete hooks (the Kyverno chart does). Without this the root
+  # app would flap OutOfSync forever; only those finalizers are ignored.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jqPathExpressions:
+        - '.metadata.finalizers[]? | select(startswith("pre-delete-finalizer.argocd.argoproj.io"))'

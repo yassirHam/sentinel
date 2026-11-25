@@ -1,0 +1,35 @@
+# prod: promotion is a reviewed PR that copies a digest already proven in
+# dev into values-prod.yaml. Sync is MANUAL and only inside the project's
+# sync window; Kyverno additionally requires digests + Cosign signatures.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sentinel-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: sentinel
+  source:
+    repoURL: https://github.com/yassirHam/sentinel-orion.git
+    targetRevision: master
+    path: sentinel/deploy/helm/sentinel-service
+    helm:
+      releaseName: sentinel
+      valueFiles: [values-prod.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sentinel-prod
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+    managedNamespaceMetadata:
+      labels:
+        sentinel.io/env: prod
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: latest
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]

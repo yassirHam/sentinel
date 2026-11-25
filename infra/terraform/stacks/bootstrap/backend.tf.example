@@ -1,0 +1,7 @@
+# Step 2 of the bootstrap (after the first local apply):
+#   cp backend.tf.example backend.tf
+#   terraform init -migrate-state -backend-config=../../envs/bootstrap.s3.tfbackend
+# then commit backend.tf and delete the local terraform.tfstate* files.
+terraform {
+  backend "s3" {}
+}

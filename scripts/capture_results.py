@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from fastapi.testclient import TestClient
+
 from app.main import app, state
 
 # Keep the capture output clean: silence per-request + httpx chatter.
@@ -25,6 +26,7 @@ def total(metrics: str, name: str) -> float:
 
 def main() -> None:
     state.warmup_seconds = 0.0  # immediate readiness for the capture
+    state.fault_injection_enabled = True  # the capture exercises /fault
     with TestClient(app, raise_server_exceptions=False) as c:
         print("== SMOKE ==")
         print("healthz:", c.get("/healthz").status_code)
